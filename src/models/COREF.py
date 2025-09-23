@@ -26,14 +26,14 @@ class COREF:
                 model_name,
                 trust_remote_code=True,
                 device_map="auto",
-                torch_dtype=torch.bfloat16,
+                dtype=torch.bfloat16,
             ).eval()
         else:
             self.model = (
                 AutoModelForCausalLM.from_pretrained(
                     model_name,
                     trust_remote_code=True,
-                    torch_dtype=torch.float16,
+                    dtype=torch.float16,
                 )
                 .to(self.device)
                 .eval()
