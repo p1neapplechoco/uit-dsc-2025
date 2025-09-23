@@ -22,14 +22,14 @@ class RE:
                 model_name,
                 trust_remote_code=True,
                 device_map="auto",
-                dtype=torch.bfloat16,
+                torch_dtype=torch.bfloat16,
             ).eval()
         else:
             self.model = (
                 AutoModelForCausalLM.from_pretrained(
                     model_name,
                     trust_remote_code=True,
-                    dtype=torch.float16,
+                    torch_dtype=torch.float16,
                 )
                 .to(self.device)
                 .eval()
