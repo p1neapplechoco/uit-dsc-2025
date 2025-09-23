@@ -71,10 +71,11 @@ class EE:
 
     def __call__(self, text):
         system = (
-            "Bạn là chuyên gia NER tiếng Việt.\n"
+            "Bạn là chuyên gia thực thể trong tiếng Việt.\n"
             "NHIỆM VỤ:\n"
-            "- Chỉ trích xuất thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
+            "- Chỉ trích xuất TOÀN BỘ thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
             "- Không thêm thực thể từ ví dụ ở trên hay kiến thức ngoài văn bản.\n"
+            "- Hãy cố gắng trích xuất đầy đủ, KHÔNG BỎ SÓT thực thể nào.\n"
             '- Trả về DUY NHẤT một mảng JSON: [{"text": ..., "type": ...}]. Không giải thích.'
         )
 
