@@ -80,6 +80,8 @@ def run_preprocessor(data_path, output_path):
     if not output_path.endswith(".json"):
         output_path += ".json"
 
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     with open(output_path, "w", encoding="utf-8") as out_file:
         json.dump(results, out_file, ensure_ascii=False, indent=4)
 
