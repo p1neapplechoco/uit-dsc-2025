@@ -41,6 +41,9 @@ def run_preprocessor(data_path, output_path):
         response = coref(response)
 
         del coref
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         ee = EE(model_name=PARAMS.MODEL_NAME)
 
@@ -48,6 +51,9 @@ def run_preprocessor(data_path, output_path):
         response_entities = ee(response)
 
         del ee
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         re = RE(model_name=PARAMS.MODEL_NAME)
 
@@ -55,6 +61,9 @@ def run_preprocessor(data_path, output_path):
         response_relations = re(response, response_entities)
 
         del re
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         results.append(
             {
@@ -67,10 +76,6 @@ def run_preprocessor(data_path, output_path):
                 "response_relations": response_relations,
             }
         )
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     if not output_path.endswith(".json"):
         output_path += ".json"
