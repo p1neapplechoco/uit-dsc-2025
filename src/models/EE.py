@@ -69,11 +69,11 @@ class EE:
                     out.append(e)
         return out
 
-    def __call__(self, text):
+    def __call__(self, text1, text2):
         system = (
             "Bạn là chuyên gia thực thể trong tiếng Việt.\n"
             "NHIỆM VỤ:\n"
-            "- Chỉ trích xuất TOÀN BỘ thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
+            "- Chỉ trích xuất TOÀN BỘ thực thể XUẤT HIỆN TRONG 2 ĐOẠN <doc1>...</doc1> và <doc2>...</doc2> phía dưới (dạng chuỗi con chính xác).\n"
             "- Không thêm thực thể từ ví dụ ở trên hay kiến thức ngoài văn bản.\n"
             "- Hãy cố gắng trích xuất đầy đủ, KHÔNG BỎ SÓT thực thể nào.\n"
             '- Trả về DUY NHẤT một mảng JSON: [{"text": ..., "type": ...}]. Không giải thích.'
@@ -102,7 +102,10 @@ class EE:
             {"role": "assistant", "content": shots[1][1]},
             {"role": "user", "content": shots[2][0]},
             {"role": "assistant", "content": shots[2][1]},
-            {"role": "user", "content": f"<doc>\n{text}\n</doc>"},
+            {
+                "role": "user",
+                "content": f"<doc1>\n{text1}\n</doc1> <doc2>\n{text2}\n</doc2>",
+            },
         ]
 
         enc = self.tokenizer.apply_chat_template(
@@ -131,6 +134,7 @@ class EE:
 
         gen_ids = out[0, enc.shape[1] :]
         text = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+        print("text", text)
 
         if text.startswith("```"):
             text = text.strip("` \n")

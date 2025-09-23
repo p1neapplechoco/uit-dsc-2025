@@ -47,8 +47,8 @@ def run_preprocessor(data_path, output_path):
 
         ee = EE(model_name=PARAMS.MODEL_NAME)
 
-        context_entities = ee(context)
-        response_entities = ee(response)
+        context_entities = ee(context, response)
+        # response_entities = ee(response)
 
         del ee
         gc.collect()
