@@ -6,14 +6,34 @@ import ast, json, re, torch
 
 
 class RE:
-    def __init__(self, model_name):
-        self.tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
+    def __init__(self, model_name, device="auto"):
+        if device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
         )
+
+        if torch.cuda.is_available() and device != "cpu":
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+            ).eval()
+        else:
+            self.model = (
+                AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    torch_dtype=torch.float16,
+                )
+                .to(self.device)
+                .eval()
+            )
 
     @staticmethod
     def __clean_json(text):
@@ -65,34 +85,41 @@ class RE:
                 "content": f"Đoạn văn:\n{text}\n---\nEntities:\n{entities}\n---\nHãy áp dụng đúng quy tắc trên.",
             },
         ]
-        enc = self.tok.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
-        )
-        enc = enc.to(self.model.device)
-        eos_ids = [self.tok.eos_token_id]
-        try:
-            im_end_id = self.tok.convert_tokens_to_ids("<|im_end|>")
-            if im_end_id is not None:
-                eos_ids.append(im_end_id)
-        except Exception:
-            pass
-        out = self.model.generate(
-            enc,
-            max_new_tokens=2000,
-            do_sample=False,
-            temperature=0.0,
-            top_p=1.0,
-            eos_token_id=eos_ids,
-        )
-        gen_ids = out[0, enc.shape[1] :]
-        text = self.tok.decode(gen_ids, skip_special_tokens=True).strip()
-        if text.startswith("```"):
-            text = text.strip("` \n")
-            lines = [
-                ln
-                for ln in text.splitlines()
-                if not ln.strip().startswith(("```", "text", "json"))
-            ]
-            text = "\n".join(lines).strip()
 
-        return self.__clean_json(text)
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
+        )
+
+        try:
+            if hasattr(self.model, "hf_device_map"):
+                first_device = next(iter(self.model.hf_device_map.values()))
+                input_ids = input_ids.to(first_device)
+            else:
+                input_ids = input_ids.to(self.device)
+        except:
+            input_ids = input_ids.to(self.device)
+
+        attention_mask = (
+            (input_ids != self.tokenizer.pad_token_id).long()
+            if self.tokenizer.pad_token_id is not None
+            else None
+        )
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=1024,
+                do_sample=False,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+
+        response = self.tokenizer.decode(
+            outputs[0][len(input_ids[0]) :], skip_special_tokens=True
+        )
+
+        return self.__clean_json(response)

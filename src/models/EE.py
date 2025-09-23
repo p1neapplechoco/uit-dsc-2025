@@ -7,14 +7,35 @@ import ast
 
 
 class EE:
-    def __init__(self, model_name):
-        self.tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
+    def __init__(self, model_name, device="auto"):
+
+        if device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
         )
+
+        if torch.cuda.is_available() and device != "cpu":
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+            ).eval()
+        else:
+            self.model = (
+                AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    torch_dtype=torch.float16,
+                )
+                .to(self.device)
+                .eval()
+            )
 
     @staticmethod
     def __clean_json(text):
@@ -25,25 +46,50 @@ class EE:
             entities = ast.literal_eval(text)
             return entities
 
+    @staticmethod
+    def extract_first_json_array(s: str):
+        # Tóm đúng mảng JSON đầu tiên để tránh rác
+        m = re.search(r"\[\s*(?:\{.*?\})\s*(?:,\s*\{.*?\}\s*)*\]", s, flags=re.S)
+        if not m:
+            raise ValueError("No JSON array found")
+        return json.loads(m.group(0))
+
+    @staticmethod
+    def filter_entities_in_text(entities, src: str):
+        src_norm = src
+        out, seen = [], set()
+        for e in entities:
+            t = e.get("text", "")
+            typ = e.get("type", "")
+            if t and t in src_norm:
+                key = (t, typ.upper())
+                if key not in seen:
+                    seen.add(key)
+                    e["type"] = typ.upper()
+                    out.append(e)
+        return out
+
     def __call__(self, text):
         system = (
-            "Bạn là một chuyên gia trích xuất thực thể bằng tiếng Việt. "
-            "Hãy xác định và phân loại các thực thể trong đoạn văn dưới đây."
+            "Bạn là chuyên gia NER tiếng Việt.\n"
+            "NHIỆM VỤ:\n"
+            "- Chỉ trích xuất thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
+            "- Không thêm thực thể từ ví dụ ở trên hay kiến thức ngoài văn bản.\n"
+            '- Trả về DUY NHẤT một mảng JSON: [{"text": ..., "type": ...}]. Không giải thích.'
         )
+
         shots = [
             (
-                "Hưng và Lan là đôi bạn thân. Hưng rất là đẹp trai.",
-                "[{'text': 'Hưng', 'type': 'PERSON'}, "
-                "{'text': 'Lan', 'type': 'PERSON'}]",
+                "Hưng và Lan là đôi bạn thân.",
+                r"""[{"text":"Hưng","type":"PERSON"},{"text":"Lan","type":"PERSON"}]""",
             ),
             (
                 "Hà Nội là thủ đô của Việt Nam.",
-                "[{'text': 'Hà Nội', 'type': 'LOCATION'}, "
-                "{'text': 'Việt Nam', 'type': 'LOCATION'}]",
+                r"""[{"text":"Hà Nội","type":"LOCATION"},{"text":"Việt Nam","type":"LOCATION"}]""",
             ),
             (
-                "Apple Inc. là một công ty công nghệ lớn.",
-                "[{'text': 'Apple Inc.', 'type': 'ORGANIZATION'}]",
+                "Công ty ABC là một doanh nghiệp công nghệ.",
+                r"""[{"text":"Công ty ABC","type":"ORGANIZATION"}]""",
             ),
         ]
 
@@ -55,41 +101,45 @@ class EE:
             {"role": "assistant", "content": shots[1][1]},
             {"role": "user", "content": shots[2][0]},
             {"role": "assistant", "content": shots[2][1]},
-            {"role": "user", "content": text},
+            {"role": "user", "content": f"<doc>\n{text}\n</doc>"},
         ]
 
-        enc = self.tok.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
         )
-        enc = enc.to(self.model.device)
 
-        eos_ids = [self.tok.eos_token_id]
         try:
-            im_end_id = self.tok.convert_tokens_to_ids("<|im_end|>")
-            if im_end_id is not None:
-                eos_ids.append(im_end_id)
-        except Exception:
-            pass
+            if hasattr(self.model, "hf_device_map"):
+                first_device = next(iter(self.model.hf_device_map.values()))
+                input_ids = input_ids.to(first_device)
+            else:
+                input_ids = input_ids.to(self.device)
+        except:
+            input_ids = input_ids.to(self.device)
 
-        out = self.model.generate(
-            enc,
-            max_new_tokens=1200,
-            do_sample=False,
-            temperature=0.0,
-            top_p=1.0,
-            eos_token_id=eos_ids,
+        attention_mask = (
+            (input_ids != self.tokenizer.pad_token_id).long()
+            if self.tokenizer.pad_token_id is not None
+            else None
         )
 
-        gen_ids = out[0, enc.shape[1] :]
-        text = self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+        with torch.no_grad():
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=1024,
+                do_sample=False,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
 
-        if text.startswith("```"):
-            text = text.strip("` \n")
-            lines = [
-                ln
-                for ln in text.splitlines()
-                if not ln.strip().startswith(("```", "text", "json"))
-            ]
-            text = "\n".join(lines).strip()
+        response = self.tokenizer.decode(
+            outputs[0][len(input_ids[0]) :], skip_special_tokens=True
+        )
 
-        return self.__clean_json(text)
+        ents = self.extract_first_json_array(response)
+        ents = self.filter_entities_in_text(ents, text)
+        return self.__clean_json(ents)
