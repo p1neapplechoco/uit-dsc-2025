@@ -1,4 +1,11 @@
-from models import COREF, EE, RE
+try:
+    from ..models import COREF, EE, RE
+except Exception:
+    import os, sys
+
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from models import COREF, EE, RE  # type: ignore
+
 from tqdm import tqdm
 import argparse
 import logging
@@ -62,7 +69,8 @@ def run_preprocessor(data_path, output_path):
         )
 
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     if not output_path.endswith(".json"):
         output_path += ".json"
@@ -74,13 +82,13 @@ def run_preprocessor(data_path, output_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run specified model.")
     parser.add_argument(
-        "data_path",
+        "--data_path",
         type=str,
         help="Path to the input data file.",
     )
 
     parser.add_argument(
-        "output_path",
+        "--output_path",
         type=str,
         help="Path to the output data file.",
     )

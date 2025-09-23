@@ -7,10 +7,18 @@ import ast
 
 
 class EE:
-    def __init__(self, model_name, device="auto"):
-
+    def __init__(self, model_name, device="auto", torch_dtype=torch.bfloat16):
+        # Resolve device
         if device == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda")
+            elif (
+                getattr(torch.backends, "mps", None)
+                and torch.backends.mps.is_available()
+            ):
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
         else:
             self.device = torch.device(device)
 
@@ -19,29 +27,21 @@ class EE:
             trust_remote_code=True,
         )
 
-        if torch.cuda.is_available() and device != "cpu":
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,
-            ).eval()
-        else:
-            self.model = (
-                AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    trust_remote_code=True,
-                    torch_dtype=torch.float16,
-                )
-                .to(self.device)
-                .eval()
-            )
+        # Load model without forcing device_map so we can control placement
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            torch_dtype=torch_dtype,
+        )
+        # Move to target device when not CPU (CPU is default)
+        if self.device.type != "cpu":
+            self.model = self.model.to(device=self.device)
+        self.model.eval()
 
     @staticmethod
     def __clean_json(text):
         try:
             return json.loads(text)
-
         except Exception:
             entities = ast.literal_eval(text)
             return entities
@@ -104,43 +104,43 @@ class EE:
             {"role": "user", "content": f"<doc>\n{text}\n</doc>"},
         ]
 
-        input_ids = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_tensors="pt",
+        enc = self.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt"
         )
+        # Move inputs to the correct device
+        enc = enc.to(self.device)
 
+        eos_ids = [self.tokenizer.eos_token_id]
         try:
-            if hasattr(self.model, "hf_device_map"):
-                first_device = next(iter(self.model.hf_device_map.values()))
-                input_ids = input_ids.to(first_device)
-            else:
-                input_ids = input_ids.to(self.device)
-        except:
-            input_ids = input_ids.to(self.device)
-
-        attention_mask = (
-            (input_ids != self.tokenizer.pad_token_id).long()
-            if self.tokenizer.pad_token_id is not None
-            else None
-        )
+            im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+            if im_end_id is not None:
+                eos_ids.append(im_end_id)
+        except Exception:
+            pass
 
         with torch.no_grad():
-            outputs = self.model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=1024,
+            out = self.model.generate(
+                enc,
+                max_new_tokens=1200,
                 do_sample=False,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
+                temperature=0.0,
+                top_p=1.0,
+                eos_token_id=eos_ids,
             )
 
-        response = self.tokenizer.decode(
-            outputs[0][len(input_ids[0]) :], skip_special_tokens=True
-        )
+        gen_ids = out[0, enc.shape[1] :]
+        text = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
 
-        ents = self.extract_first_json_array(response)
+        if text.startswith("```"):
+            text = text.strip("` \n")
+            lines = [
+                ln
+                for ln in text.splitlines()
+                if not ln.strip().startswith(("```", "text", "json"))
+            ]
+            text = "\n".join(lines).strip()
+
+        ents = self.extract_first_json_array(text)
         ents = self.filter_entities_in_text(ents, text)
 
         return self.__clean_json(ents)
