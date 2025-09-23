@@ -143,4 +143,4 @@ class EE:
         ents = self.extract_first_json_array(text)
         ents = self.filter_entities_in_text(ents, text)
 
-        return self.__clean_json(ents)
+        return ents
