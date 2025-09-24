@@ -11,7 +11,6 @@ class EE:
         self,
         model_name,
         device="auto",
-        torch_dtype=torch.bfloat16,
         device_map: str | None = None,
     ):
         """Entity Extraction model wrapper.
@@ -22,8 +21,6 @@ class EE:
             Hugging Face model id / path.
         device : str
             "auto" (preferred) | "cuda" | "cpu" | "mps" | specific index like "cuda:0".
-        torch_dtype : torch.dtype
-            Dtype for loading model.
         device_map : str | None
             If provided, passed to from_pretrained (e.g. "auto"). When None we place
             the whole model on a single device resolved from `device`.
@@ -62,7 +59,6 @@ class EE:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 trust_remote_code=True,
-                torch_dtype=torch_dtype,
                 device_map=device_map,
             )
         else:
@@ -70,7 +66,6 @@ class EE:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 trust_remote_code=True,
-                torch_dtype=torch_dtype,
             ).to(
                 self.device
             )  # type: ignore[attr-defined]
