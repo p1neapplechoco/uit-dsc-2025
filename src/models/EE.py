@@ -7,35 +7,74 @@ import ast
 
 
 class EE:
-    def __init__(self, model_name, device="auto", torch_dtype=torch.bfloat16):
-        # Resolve device
+    def __init__(
+        self,
+        model_name,
+        device="auto",
+        torch_dtype=torch.bfloat16,
+        device_map: str | None = None,
+    ):
+        """Entity Extraction model wrapper.
+
+        Parameters
+        ----------
+        model_name : str
+            Hugging Face model id / path.
+        device : str
+            "auto" (preferred) | "cuda" | "cpu" | "mps" | specific index like "cuda:0".
+        torch_dtype : torch.dtype
+            Dtype for loading model.
+        device_map : str | None
+            If provided, passed to from_pretrained (e.g. "auto"). When None we place
+            the whole model on a single device resolved from `device`.
+        """
+
+        # Resolve single device (used only if device_map is None)
         if device == "auto":
             if torch.cuda.is_available():
-                self.device = torch.device("cuda")
+                single_device = torch.device("cuda")
             elif (
                 getattr(torch.backends, "mps", None)
                 and torch.backends.mps.is_available()
             ):
-                self.device = torch.device("mps")
+                single_device = torch.device("mps")
             else:
-                self.device = torch.device("cpu")
+                single_device = torch.device("cpu")
         else:
-            self.device = torch.device(device)
+            single_device = torch.device(device)
+        self.device = single_device
+
+        # If multiple GPUs & user left device_map None, default to auto to utilize them
+        if (
+            device_map is None
+            and torch.cuda.device_count() > 1
+            and self.device.type == "cuda"
+        ):
+            device_map = "auto"
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True,
         )
 
-        # Load model without forcing device_map so we can control placement
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            torch_dtype=torch_dtype,
-        )
-        # Move to target device when not CPU (CPU is default)
-        if self.device.type != "cpu":
-            self.model = self.model.to(device=self.device)
+        if device_map is not None:
+            # Let HF dispatch layers across multiple GPUs
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                torch_dtype=torch_dtype,
+                device_map=device_map,
+            )
+        else:
+            # Single-device placement
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                torch_dtype=torch_dtype,
+            ).to(
+                self.device
+            )  # type: ignore[attr-defined]
+
         self.model.eval()
 
     @staticmethod
@@ -73,9 +112,10 @@ class EE:
         system = (
             "Bạn là chuyên gia thực thể trong tiếng Việt.\n"
             "NHIỆM VỤ:\n"
-            "- Chỉ trích xuất TOÀN BỘ thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
+            "- Trích xuất TOÀN BỘ thực thể XUẤT HIỆN TRONG ĐOẠN <doc>...</doc> phía dưới (dạng chuỗi con chính xác).\n"
             "- Không thêm thực thể từ ví dụ ở trên hay kiến thức ngoài văn bản.\n"
             "- Hãy cố gắng trích xuất đầy đủ, KHÔNG BỎ SÓT thực thể nào.\n"
+            "- Trích xuất kể cả những thực thể nhỏ, có thể chỉ là một từ đơn.\n"
             '- Trả về DUY NHẤT một mảng JSON: [{"text": ..., "type": ...}]. Không giải thích.'
         )
 
