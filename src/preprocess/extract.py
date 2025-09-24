@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 class PARAMS:
-    MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
+    MODEL_NAME = "unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit"
     DEVICE = "auto"  # auto | cpu | cuda | cuda:0 etc.
     MAX_ROWS: Optional[int] = None  # limit rows for debugging
     REUSE_MODELS = True  # load once then reuse (recommended)
