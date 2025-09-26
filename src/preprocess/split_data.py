@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 class PARAMS:
-    N_SPLITS = 7
+    N_SPLITS = 4
     DATA = Path("D:/.projects/uit-ds-2025/dataset/vihallu-train.csv")
     BASE_PATH = Path("D:/.projects/uit-ds-2025/dataset")
     BASE_FILENAME = "vihallu-train"
