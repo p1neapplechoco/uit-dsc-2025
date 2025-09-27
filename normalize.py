@@ -10,6 +10,7 @@ import argparse
 import gc
 
 from src.models.ResponseNormalizer import ResponseNormalizer
+from tqdm import tqdm
 
 
 def process_csv(
@@ -34,7 +35,10 @@ def process_csv(
 
         df["normalized_response"] = ""
 
-        for i in range(0, len(df), batch_size):
+        for i in tqdm(
+            range(0, len(df), batch_size),
+            total=(len(df) + batch_size - 1) // batch_size,
+        ):
             batch_end = min(i + batch_size, len(df))
             print(f"Processing rows {i+1}-{batch_end}...")
 
