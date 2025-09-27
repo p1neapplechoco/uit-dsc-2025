@@ -74,12 +74,26 @@ def main(input, output, batch_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process CSV files")
-    parser.add_argument("--input", type=str, required=True, help="Input CSV file path")
     parser.add_argument(
-        "--output", type=str, required=True, help="Output CSV file path"
+        "--input",
+        type=str,
+        required=True,
+        help="Input CSV file path",
     )
+
     parser.add_argument(
-        "--batch_size", type=int, default=1, help="Batch size for processing"
+        "--output",
+        type=str,
+        required=True,
+        help="Output CSV file path",
     )
+
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size for processing",
+    )
+
     args = parser.parse_args()
     main(args.input, args.output, args.batch_size)
