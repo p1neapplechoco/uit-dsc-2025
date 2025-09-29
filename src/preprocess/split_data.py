@@ -4,9 +4,9 @@ from pathlib import Path
 
 class PARAMS:
     N_SPLITS = 4
-    DATA = Path("D:/.projects/uit-ds-2025/dataset/vihallu-train.csv")
+    DATA = Path("D:/.projects/uit-ds-2025/dataset/vihallu-train-corrected.csv")
     BASE_PATH = Path("D:/.projects/uit-ds-2025/dataset")
-    BASE_FILENAME = "vihallu-train"
+    BASE_FILENAME = "vihallu-train-corrected"
 
 
 def split_into_n_parts(data: pd.DataFrame, n: int) -> list[pd.DataFrame]:
